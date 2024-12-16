@@ -8,12 +8,12 @@ public class Tile
         Dynamite
     }
 
+    public int GemId;
     public TileType Type;
-    public bool IsRevealed;
-
+    
     public Tile(TileType type)
     {
-        this.Type = type;
-        this.IsRevealed = false;
+        GemId = -1;
+        Type = type;
     }
 }
