@@ -1,21 +1,18 @@
-using System;
-using System.Security.Cryptography;
 using UnityEngine;
 using UnityEngine.UI;
 
-[RequireComponent(typeof(Button))]
 public class TileItem : MonoBehaviour
 {
     private BoardManager _boardManager;
     private int _positionX;
     private int _positionY;
     
-    private Button _button;
+    [SerializeField] private Button tileButton;
+    [SerializeField] private ParticleSystem destroyedEffect;
 
-    private void Awake()
+    private void OnEnable()
     {
-        _button = GetComponent<Button>();
-        _button.onClick.AddListener(OnClick);
+        tileButton.onClick.AddListener(OnClick);
     }
 
     public void Initialize(BoardManager boardManager, int positionX, int positionY)
@@ -28,6 +25,7 @@ public class TileItem : MonoBehaviour
     private void OnClick()
     {
         _boardManager.Dig(_positionX, _positionY);
-        Destroy(gameObject);
+        tileButton.gameObject.SetActive(false);
+        destroyedEffect.Play();
     }
 }

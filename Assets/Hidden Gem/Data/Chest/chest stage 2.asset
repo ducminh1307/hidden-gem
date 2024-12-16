@@ -12,5 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0ef606ab6be1945418971fbd30296fae, type: 3}
   m_Name: chest stage 2
   m_EditorClassIdentifier: 
+  stageReward: 2
   chestSprite: {fileID: 21300000, guid: 846b138806232b443954aeed18e19923, type: 3}
   chestPickaxe: 10
