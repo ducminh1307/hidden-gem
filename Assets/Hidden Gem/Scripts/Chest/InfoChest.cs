@@ -1,5 +1,4 @@
-using System;
-using System.Collections;
+using DG.Tweening;
 using TMPro;
 using UnityEngine;
 
@@ -19,5 +18,7 @@ public class InfoChest : MonoBehaviour
         quantityText.text = $"x {quantity}";
         
         _rect.anchoredPosition = new Vector2(anchorPosX, _rect.anchoredPosition.y);
+        
+        // DOVirtual.DelayedCall(2f, () => gameObject.SetActive(false));
     }
 }

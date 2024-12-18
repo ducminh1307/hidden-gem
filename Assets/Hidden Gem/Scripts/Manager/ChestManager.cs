@@ -44,15 +44,11 @@ public class ChestManager : MonoBehaviour
     public void MoveActivateToNextChest(int stage)
     {
         int index = stage - 1;
-
         chestActive.MoveActiveToNextChest(rectChests[index].anchoredPosition.x);
         progressSlider.DOValue(index, .5f).SetEase(Ease.OutQuad);
     }
 
-    private void UnlockChest(int index)
-    {
-        if (index > 0) chests[index].ActivateChest();
-    }
+    public void UnlockChest(int stage) => chests.Find(c => c.ChestData.StageReward == stage - 1).ActivateChest();
 
     private void ShowInfoChest(int stage)
     {

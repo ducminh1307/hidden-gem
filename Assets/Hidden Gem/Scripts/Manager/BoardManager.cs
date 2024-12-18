@@ -1,7 +1,7 @@
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
 using Random = UnityEngine.Random;
@@ -16,12 +16,13 @@ public class BoardManager : MonoBehaviour
     [SerializeField] private RectTransform rectTransformStoneParent;
     [SerializeField] private RectTransform rectTransformGemParent;
 
+    [Space] [SerializeField] private GemCollectManager gemCollectManager;
+
     private Tile[,] _board;
+    private TileItem[,] _tileItems;
     private float _tileSize;
-    private RectTransform[,] _rectTiles;
     private List<Gem> _gems = new List<Gem>();
     private List<GemItem> _gemItems = new List<GemItem>();
-    private List<Vector2Int> _gemStartPositions = new List<Vector2Int>();
 
     private BoardStage _currentStage;
 
@@ -40,7 +41,7 @@ public class BoardManager : MonoBehaviour
         ResetData();
 
         _board = new Tile[boardSize, boardSize];
-        _rectTiles = new RectTransform[boardSize, boardSize];
+        _tileItems = new TileItem[boardSize, boardSize];
 
         for (int i = 0; i < _currentStage.gems.Count; i++)
         {
@@ -58,9 +59,11 @@ public class BoardManager : MonoBehaviour
 
                 GameObject tileItem = Instantiate(stonePrefab, rectTransformStoneParent);
                 tileItem.gameObject.name = $"Stone [{i},{j}]";
-                tileItem.GetComponent<TileItem>().Initialize(this, positionX: i, positionY: j);
+                
+                var tileItemScript = tileItem.GetComponent<TileItem>();
 
-                _rectTiles[i, j] = tileItem.GetComponent<RectTransform>();
+                tileItemScript.Initialize(this, positionX: i, positionY: j);
+                _tileItems[i, j] = tileItemScript;
             }
         }
 
@@ -70,81 +73,98 @@ public class BoardManager : MonoBehaviour
 
         yield return null;
 
-        PlaceRandomGem(_gems);
+        bool gemPlacementSuccess = false;
+        do
+        {
+            gemPlacementSuccess = PlaceRandomGem(_gems);
+            Debug.Log(gemPlacementSuccess);
+        } while (!gemPlacementSuccess);
+
+        gemCollectManager.InitializeGemCollect(_gems);
     }
 
     private void ResetData()
     {
         if (_board != null)
         {
+            foreach (var gemItem in _gemItems)
+            {
+                Destroy(gemItem.gameObject);
+            }
+
+            foreach (var tile in _tileItems)
+            {
+                Destroy(tile.gameObject);
+            }
+
             _board = null;
-            _rectTiles = null;
+            _tileItems = null;
+            _gemItems.Clear();
         }
 
         _gems?.Clear();
     }
 
-    public void Dig(int PosX, int PosY)
+    public void Dig(int posX, int posY)
     {
-        switch (_board[PosX, PosY].Type)
+        switch (_board[posX, posY].Type)
         {
             case Tile.TileType.Stone:
-                _board[PosX, PosY].Type = Tile.TileType.Empty;
+                _board[posX, posY].Type = Tile.TileType.Empty;
                 break;
             case Tile.TileType.Gem:
-                _gems.Find(g => g.GemId == _board[PosX, PosY].GemId).CanMove = false;
+                Gem gem = _gems.Find(g => g.GemId == _board[posX, posY].GemId);
+                gem.OccupiedPositions.Remove(new Vector2Int(posX, posY));
+
+                if (gem.IsDiscovered)
+                {
+                    Sequence animGem = DOTween.Sequence();
+
+                    animGem.Append(_gemItems.Find(i => i.Gem.GemId == gem.GemId).gemIcon.DOFade(0, 0.5f)
+                        .SetEase(Ease.OutQuart));
+
+                    animGem.Join(_gemItems.Find(i => i.Gem.GemId == gem.GemId).GetComponent<RectTransform>()
+                        .DOScale(1.2f, 0.5f)
+                        .SetEase(Ease.OutQuart));
+
+                    gemCollectManager.GemCollectItems.Find(gc => gc.Gem.GemId == gem.GemId).Activate();
+                    DOVirtual.DelayedCall(1.5f,
+                        () => animGem.Play());
+                }
+
                 break;
             case Tile.TileType.Dynamite:
+                _board[posX, posY].Type = Tile.TileType.Empty;
+                Explode(posX, posY);
                 break;
         }
-
-        ResetBoardToRandom();
     }
 
-    private void ResetBoardToRandom()
+    private void Explode(int posX, int posY)
     {
-        List<Gem> gemsCanRandom = _gems.Where(g => g.CanMove).ToList();
-
-        for (int row = 0; row < _currentStage.boardSize; row++)
+        Debug.Log("Explode");
+        for (int x = -1; x <= 1; x++)
         {
-            for (int col = 0; col < _currentStage.boardSize; col++)
+            for (int y = -1; y <= 1; y++)
             {
-                if (_board[row, col].Type == Tile.TileType.Gem)
+                int checkRow = posX + x;
+                int checkCol = posY + y;
+                if (checkRow >= 0 && checkRow < _currentStage.boardSize && checkCol >= 0 &&
+                    checkCol < _currentStage.boardSize)
                 {
-                    Gem gemAtPos = _gems.Find(g => g.GemId == _board[row, col].GemId);
-
-                    if (gemAtPos is { CanMove: true })
-                    {
-                        _board[row, col].Type = Tile.TileType.Stone;
-                        _board[row, col].GemId = -1;
-                    }
+                    _tileItems[checkRow, checkCol].OnDestroyedTile?.Invoke();
+                    Dig(posX, posY);
                 }
             }
         }
-
-        bool isPlacedAllGem = PlaceRandomGem(gemsCanRandom);
-
-        Debug.Log($"Placed all gem: {isPlacedAllGem}");
-        if (!isPlacedAllGem)
-            RestorePreviousBoard(gemsCanRandom);
     }
 
     #region Random Place Gem
 
     private bool PlaceRandomGem(List<Gem> gems)
     {
-        List<Vector2Int> allPositions = new List<Vector2Int>();
-
-        for (int y = 0; y < _currentStage.boardSize; y++)
-        {
-            for (int x = 0; x < _currentStage.boardSize; x++)
-            {
-                if (_board[y, x].Type != Tile.TileType.Empty && _board[y, x].Type != Tile.TileType.Gem)
-                {
-                    allPositions.Add(new Vector2Int(x, y));
-                }
-            }
-        }
+        ResetBoardToStone();
+        List<Vector2Int> allPositions = GetAvailablePosition();
 
         ShufflePosition(allPositions);
 
@@ -153,25 +173,25 @@ public class BoardManager : MonoBehaviour
             bool isPlaced = false;
             foreach (var position in allPositions)
             {
-                int startX = position.x;
-                int startY = position.y;
+                int startCol = position.x;
+                int startRow = position.y;
 
                 // Kiểm tra kích thước gem với board
-                if (startY + gem.GemData.Height > _currentStage.boardSize ||
-                    startX + gem.GemData.Width > _currentStage.boardSize)
+                if (startRow + gem.GemData.Height > _currentStage.boardSize ||
+                    startCol + gem.GemData.Width > _currentStage.boardSize)
                 {
                     continue;
                 }
 
                 // Kiểm tra nếu gem có thể được đặt
-                if (CanPlaceGem(gem.GemData, startY, startX))
+                if (CanPlaceGem(gem.GemData, startRow, startCol))
                 {
                     gem.OccupiedPositions.Clear();
 
-                    PlaceGem(gem, startY, startX);
+                    PlaceGem(gem, startRow, startCol);
 
                     // Loại bỏ các ô đã sử dụng khỏi danh sách
-                    RemoveUsedPositions(allPositions, gem.GemData, startY, startX);
+                    RemoveUsedPositions(allPositions, startRow, startCol, gem.GemData);
                     isPlaced = true;
                     break;
                 }
@@ -184,8 +204,45 @@ public class BoardManager : MonoBehaviour
             }
         }
 
-        UpdateVisualGem();
+        if (_currentStage.amountOfDynamites > 0)
+        {
+            for (int i = 0; i < _currentStage.amountOfDynamites; i++)
+            {
+                PlaceDynamite(allPositions[i].x, allPositions[i].y);
+                RemoveUsedPositions(allPositions, allPositions[i].y, allPositions[i].x);
+            }
+        }
+
         return true;
+    }
+
+    private void PlaceDynamite(int startX, int startY)
+    {
+        Debug.Log($"Place Dynamite at {startX}, {startY}");
+        _board[startY, startX].Type = Tile.TileType.Dynamite;
+        var dynamiteObject = Instantiate(dynamitePrefab, rectTransformGemParent);
+
+        dynamiteObject.GetComponent<RectTransform>().sizeDelta = new Vector2(_tileSize, _tileSize);
+
+        var rectTile = _tileItems[startY, startX].GetComponent<RectTransform>();
+        dynamiteObject.GetComponent<RectTransform>().anchoredPosition = new Vector2(rectTile.anchoredPosition.x, rectTile.anchoredPosition.y);
+    }
+
+    private List<Vector2Int> GetAvailablePosition()
+    {
+        List<Vector2Int> positions = new List<Vector2Int>();
+        for (int y = 0; y < _currentStage.boardSize; y++)
+        {
+            for (int x = 0; x < _currentStage.boardSize; x++)
+            {
+                if (_board[y, x].Type != Tile.TileType.Empty && _board[y, x].Type != Tile.TileType.Gem)
+                {
+                    positions.Add(new Vector2Int(x, y));
+                }
+            }
+        }
+
+        return positions;
     }
 
     private void ShufflePosition(List<Vector2Int> list)
@@ -197,27 +254,40 @@ public class BoardManager : MonoBehaviour
         }
     }
 
-    private void RemoveUsedPositions(List<Vector2Int> allPositions, GemData gem, int startRow, int startCol)
+    private void RemoveUsedPositions(List<Vector2Int> allPositions, int startRow, int startCol, GemData gem = null)
     {
-        for (int rowOffset = 0; rowOffset < gem.Height; rowOffset++)
+        if (!gem)
         {
-            for (int colOffset = 0; colOffset < gem.Width; colOffset++)
+            allPositions.Remove(new Vector2Int(startCol, startRow));
+        }
+        else
+        {
+            for (int rowOffset = 0; rowOffset < gem.Height; rowOffset++)
             {
-                allPositions.Remove(new Vector2Int(startCol + colOffset, startRow + rowOffset));
+                for (int colOffset = 0; colOffset < gem.Width; colOffset++)
+                {
+                    allPositions.Remove(new Vector2Int(startCol + colOffset, startRow + rowOffset));
+                }
             }
         }
     }
 
-    private void RestorePreviousBoard(List<Gem> gems)
+    private void ResetBoardToStone()
     {
-        foreach (var gem in gems)
+        for (int y = 0; y < _currentStage.boardSize; y++)
         {
-            foreach (var position in gem.OccupiedPositions)
+            for (int x = 0; x < _currentStage.boardSize; x++)
             {
-                _board[position.x, position.y].Type = Tile.TileType.Gem;
-                _board[position.x, position.y].GemId = gem.GemId;
+                _board[y, x].Type = Tile.TileType.Stone;
             }
         }
+
+        for (var i = 0; i < rectTransformGemParent.childCount; i++)
+        {
+            Destroy(rectTransformGemParent.GetChild(i).gameObject);
+        }
+
+        _gemItems.Clear();
     }
 
     private bool CanPlaceGem(GemData gem, int startRow, int startCol)
@@ -236,7 +306,6 @@ public class BoardManager : MonoBehaviour
 
     private void PlaceGem(Gem gem, int startRow, int startCol)
     {
-        gem.StartPoint = new Vector2Int(startCol, startRow);
         for (int rowOffset = 0; rowOffset < gem.GemData.Height; rowOffset++)
         {
             for (int colOffset = 0; colOffset < gem.GemData.Width; colOffset++)
@@ -247,27 +316,26 @@ public class BoardManager : MonoBehaviour
             }
         }
 
-        // Debug.Log($"Placed gem {gem.GemData.Width}x{gem.GemData.Height} at {startRow}x{startCol}");
+        UpdateVisualGem(gem, startRow, startCol);
+
+        // Debug.Log($"<color=#f0f>Placed</color> gem {gem.GemData.Width}x{gem.GemData.Height} at {startRow}x{startCol}");
     }
 
-    private void UpdateVisualGem()
+    private void UpdateVisualGem(Gem gem, int startX, int startY)
     {
-        foreach (var gem in _gems)
-        {
-            if (_gemItems.Count != _currentStage.gems.Count)
-            {
-                GameObject gemItem = Instantiate(gemPrefab, rectTransformGemParent);
-                var gemItemScript = gemItem.GetComponent<GemItem>();
-                gemItemScript.InitGem(gem, _tileSize, _rectTiles[gem.StartPoint.y, gem.StartPoint.x].anchoredPosition);
-                _gemItems.Add(gemItemScript);
-            }
-            else
-            {
-                _gemItems.Find(g => g.Gem == gem).InitGem(gem, _tileSize,
-                    _rectTiles[gem.StartPoint.y, gem.StartPoint.x].anchoredPosition);
-            }
-        }
+        GameObject gemItem = Instantiate(gemPrefab, rectTransformGemParent);
+        var gemItemScript = gemItem.GetComponent<GemItem>();
+        gemItemScript.InitGem(gem, _tileSize, _tileItems[startX, startY].GetComponent<RectTransform>().anchoredPosition);
+        _gemItems.Add(gemItemScript);
     }
 
     #endregion
+
+    public void CompleteBoard()
+    {
+        foreach (var tile in _tileItems)
+        {
+            tile.OnDestroyedTile?.Invoke();
+        }
+    }
 }

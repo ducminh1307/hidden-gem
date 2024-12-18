@@ -1,4 +1,3 @@
-using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -12,16 +11,16 @@ public class Chest : MonoBehaviour
     [SerializeField] private Button chestButton;
     [SerializeField] private ParticleSystem chestParticles;
     public UnityAction<int> OnCheckChest;
-    private ChestData _chestData;
+    public ChestData ChestData { get; private set; }
 
     private void Awake()
     {
-        chestButton.onClick.AddListener(()=> OnCheckChest.Invoke(_chestData.StageReward));
+        chestButton.onClick.AddListener(()=> OnCheckChest.Invoke(ChestData.StageReward));
     }
 
     public void InitChest(ChestData data, int stageNumber)
     {
-        _chestData = data;
+        ChestData = data;
         chestIcon.sprite = data.ChestSprite;
         buttonText.text = $"Stage {data.StageReward}";
         chestParticles.gameObject.SetActive(false);
@@ -32,15 +31,15 @@ public class Chest : MonoBehaviour
     {
         chestParticles.gameObject.SetActive(true);
         openButton.interactable = true;
-        buttonText.text = "Open";
+        buttonText.text = "OPEN";
     }
 
     public void OpenChest()
     {
         chestParticles.gameObject.SetActive(false);
         openButton.interactable = false;
-        buttonText.text = "Opened";
-        GameManager.Instance.Pickaxe += _chestData.ChestPickaxe;
+        buttonText.text = "OPENED";
+        GameManager.instance.AddPickaxe(ChestData.ChestPickaxe);
     }
     
     

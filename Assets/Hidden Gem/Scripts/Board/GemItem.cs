@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 public class GemItem : MonoBehaviour
 {
-    [SerializeField] private Image gemIcon;
+    [field:SerializeField] public Image gemIcon;
     private RectTransform _rect;
 
     public Gem Gem { get; private set; }
